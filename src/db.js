@@ -31,6 +31,10 @@ function open() {
     CREATE INDEX IF NOT EXISTS ix_app_city_date ON appearances(city, date);
     CREATE INDEX IF NOT EXISTS ix_app_file ON appearances(city, file);
     CREATE INDEX IF NOT EXISTS ix_app_name ON appearances(name);
+    -- Cleaned totals from the old undated JSON (see src/legacy.js).
+    CREATE TABLE IF NOT EXISTS legacy_counts (
+      city TEXT, side TEXT, name TEXT, count INTEGER, period_from TEXT, period_to TEXT,
+      PRIMARY KEY (city, side, name));
   `);
   return db;
 }
@@ -76,9 +80,15 @@ function markDay(db, city, date, nPdfs) {
   db.prepare("INSERT OR REPLACE INTO days VALUES (?,?,?,datetime('now'))").run(city, date, nPdfs);
 }
 
-// -> { Practitioner: { NAME: count }, Respondent: { ... } } sorted by count desc
-function counts(db, city, from, to) {
+// -> { Practitioner: { NAME: count }, Respondent: { ... } } sorted by count desc.
+// withLegacy adds the cleaned pre-scraper totals (only meaningful without --from).
+function counts(db, city, from, to, { withLegacy = false } = {}) {
   const out = { Practitioner: {}, Respondent: {} };
+  if (withLegacy) {
+    for (const r of db.prepare('SELECT side, name, count FROM legacy_counts WHERE city = ?').all(city)) {
+      out[SIDE_KEY[r.side]][r.name] = r.count;
+    }
+  }
   const rows = db
     .prepare(
       `SELECT side, name, COUNT(*) AS n FROM appearances
@@ -86,7 +96,10 @@ function counts(db, city, from, to) {
        GROUP BY side, name ORDER BY n DESC, name`
     )
     .all(city, from ?? null, from ?? null, to ?? null, to ?? null);
-  for (const r of rows) out[SIDE_KEY[r.side]][r.name] = r.n;
+  for (const r of rows) out[SIDE_KEY[r.side]][r.name] = (out[SIDE_KEY[r.side]][r.name] || 0) + r.n;
+  if (withLegacy) {
+    for (const k of Object.keys(out)) out[k] = Object.fromEntries(Object.entries(out[k]).sort((a, b) => b[1] - a[1]));
+  }
   return out;
 }
 
@@ -99,4 +112,4 @@ function coverage(db, city, from, to) {
     .get(city, from ?? null, from ?? null, to ?? null, to ?? null);
 }
 
-module.exports = { DATA_DIR, open, isDayDone, isPdfDone, savePdf, markDay, counts, coverage };
+module.exports = { SIDE_KEY, DATA_DIR, open, isDayDone, isPdfDone, savePdf, markDay, counts, coverage };

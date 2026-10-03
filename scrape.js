@@ -11,6 +11,7 @@ const { parseArgs } = require('util');
 const { CITIES, listPdfs, downloadPdf, sleep } = require('./src/hcraj');
 const { parsePdf } = require('./src/parser');
 const store = require('./src/db');
+const { renormalize } = require('./src/resolve');
 
 const { values: args, positionals } = parseArgs({
   allowPositionals: true,
@@ -93,6 +94,9 @@ async function main() {
       await scrapeDay(db, city, date);
     }
   }
+  // Split combined entries ("A SHAH B SHAH-R") using the whole db as dictionary.
+  const r = renormalize(db, { from: args.from, to });
+  console.log(`normalised ${r.before} -> ${r.after} appearances`);
   db.close();
 }
 

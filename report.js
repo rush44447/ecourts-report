@@ -23,6 +23,8 @@ const { values: args } = parseArgs({
     to: { type: 'string' },
     out: { type: 'string', default: path.join(__dirname, 'reports') },
     top: { type: 'string', default: '10' },
+    // include cleaned 2021-04 → 2026-04 legacy totals (default: yes when no --from)
+    legacy: { type: 'boolean' },
   },
 });
 
@@ -35,10 +37,16 @@ for (const city of Object.keys(CITIES)) {
     console.log(`${city}: no data in range`);
     continue;
   }
-  const data = store.counts(db, city, args.from, args.to);
+  const withLegacy = args.legacy ?? !args.from;
+  const data = store.counts(db, city, args.from, args.to, { withLegacy });
+  const legacyPeriod = withLegacy
+    ? db.prepare('SELECT MIN(period_from) AS f, MAX(period_to) AS t FROM legacy_counts WHERE city = ?').get(city)
+    : null;
   const meta = {
     city,
-    from: cov.first,
+    from: legacyPeriod?.f ?? cov.first,
+    legacy_period: legacyPeriod?.f ? `${legacyPeriod.f} → ${legacyPeriod.t}` : null,
+    scraped_from: cov.first,
     to: cov.last,
     days_scraped: cov.days,
     pdfs: cov.pdfs,

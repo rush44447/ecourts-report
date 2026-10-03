@@ -9,7 +9,7 @@ const NOT_A_NAME = new RegExp(
 // Government-counsel designations: "SS LADRECHA AAG", "NARUKA (AAG)",
 // "ROHIT CHOUDHARY DY GC". Stripped from the end of a name.
 const DESIG =
-  '(?:A{1,3}G|A\\s*G\\s*C|DY\\s*A\\s*G|ADDL\\s*A\\s*G|DY\\s*G\\s*C|G\\s*C|G\\s*A|A\\s*G\\s*A|P\\s*P|' +
+  '(?:A{1,3}G|A\\s*G\\s*C|ADDL?|DY\\s*A\\s*G|ADDL\\s*A\\s*G|DY\\s*G\\s*C|G\\s*C|G\\s*A|A\\s*G\\s*A|P\\s*P|' +
   'A\\s*P\\s*P|ADDL\\s*P\\s*P|S\\s*P\\s*P|A\\s*S\\s*G|S\\s*G|D\\s*G\\s*C|C\\s*G\\s*C|' +
   'PUBLIC\\s+PROSECUTOR|GOVT\\s+ADV(?:OCATE)?|G\\s*A\\s*CUM\\s*A+G)';
 const DESIG_SUFFIX = new RegExp(`(?:^|\\s|-)${DESIG}$`);
@@ -17,9 +17,11 @@ const DESIG_SUFFIX = new RegExp(`(?:^|\\s|-)${DESIG}$`);
 const DESIG_PREFIX = /^(?:AAG|AAAG|ADDL\s+AG|DY\s+AG|DY\s+GC|GC|PUBLIC\s+PROSECUTOR|GOVT\s+ADV(?:OCATE)?)(?:\s|-|$)/;
 
 function normalizeName(raw) {
-  let s = raw.toUpperCase().replace(/[’`]/g, "'");
+  let s = raw.toUpperCase().replace(/[’`]/g, "'").trim();
+  // Titles. "MS"/"SH"/"KU" are also initials ("MS PUROHIT"), so only strip them with a dot.
+  s = s.replace(/^(?:(?:MR|MRS|MS|MISS|SH|SHRI|SMT|KU)\.|(?:MR|MRS|MISS|SHRI|SMT)\s)\s*/, '');
+  s = s.replace(/^DR\.?\s*/, 'DR ');
   s = s.replace(/[.,;:]+/g, ' '); // S.S. -> S S
-  s = s.replace(/^\s*(MR|MRS|MS|MISS|DR|SH|SHRI|SMT|KU)\s+/, (_, t) => (t === 'DR' ? 'DR ' : ''));
   s = s.replace(/[^A-Z0-9'&/@ -]/g, ' '); // drops brackets too
   s = s.replace(/\s+/g, ' ').trim().replace(/^[\s-]+|[\s-]+$/g, '');
 
@@ -32,7 +34,7 @@ function normalizeName(raw) {
     s = s.replace(DESIG_SUFFIX, '').trim();
     s = s.replace(DESIG_PREFIX, '').trim();
   } while (s !== prev);
-  return s;
+  return s.replace(/^[\s-]+|[\s-]+$/g, '');
 }
 
 function isPerson(name) {

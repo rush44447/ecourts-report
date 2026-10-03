@@ -27,6 +27,39 @@ counts how often each advocate appears, split into:
    appearance is stored with its date, PDF and case number, so counts can be
    rebuilt for any date range and coverage is always known.
 
+## Old data (6 Apr 2021 → 5 Apr 2026)
+
+hcraj.nic.in only keeps cause lists from early 2025, so the older period
+can't be downloaded again. Instead, `import-legacy.js` cleans the website's
+old undated JSON (`data1.json` Jodhpur, `data2.json` Jaipur). The old regex
+put party text **in front of** the advocate, so each dirty key ends with the
+real name:
+
+```
+O SHRI SANWAR MAL YADAV STATE OF RAJASTHAN VIGYAN SHAH   ->  VIGYAN SHAH
+KOTAK ENTERPRISES RUSHAB MODI                             ->  RUSHAB MODI
+```
+
+Each key resolves to the longest clean advocate name at its end. Clean names
+come from the new data, plus old keys that already look clean. A one-word ending
+like "SHARMA" is never trusted. About 99.5% of old appearances resolve. The rest
+are listed in `data/legacy/<city>.unmatched.json` and are not stored. Old
+counts have no dates, and they counted every mention, not one per case.
+
+```bash
+node import-legacy.js --city jodhpur --file data/legacy/jodhpur.json
+node import-legacy.js --city jaipur  --file data/legacy/jaipur.json
+```
+
+## MongoDB
+
+`node sync-mongo.js [--from YYYY-MM]` pushes to the `ecourts` database
+(`MONGODB_URI` in `.env`):
+
+- `monthly_counts`: `{ city, month, side, name, count }`
+- `coverage`: which days/PDFs each month covers
+- `legacy_counts`: cleaned old totals with their period
+
 ## Usage
 
 Requires Node >= 22.13 (for `node:sqlite`).
@@ -40,7 +73,7 @@ node scrape.js --from 2026-10-01 --city jodhpur      # one bench, up to today
 node scrape.js --from 2026-09-30 --to 2026-09-30 --force --keep-pdfs
 
 # build reports -> reports/<city>.json, <city>.meta.json, <city>.xlsx
-node report.js
+node report.js                       # all time (legacy + scraped)
 node report.js --from 2026-04-06 --to 2026-10-03
 
 # debug the parser on a local PDF

@@ -7,6 +7,8 @@
 // Collections (database "ecourts"):
 //   monthly_counts  { city, month: 'YYYY-MM', side: 'P'|'R', name, count }
 //   coverage        { city, month, days, court_days, pdfs, first, last, updated_at }
+//   legacy_counts   { city, side, name, count, period_from, period_to }
+//                   cleaned totals from the old undated JSON (import-legacy.js)
 //
 // Each (city, month) is replaced as a whole, so re-running is idempotent.
 // Full per-appearance detail stays in SQLite; monthly totals keep Atlas M0 small.
@@ -65,6 +67,19 @@ async function main() {
       { upsert: true }
     );
     console.log(`${month} ${city.padEnd(8)} ${docs.length} names, ${cov.court_days} court days`);
+  }
+
+  // Legacy totals: small, so always replaced in full.
+  const legacy = db.collection('legacy_counts');
+  await legacy.createIndexes([{ key: { city: 1, side: 1, name: 1 }, unique: true }, { key: { city: 1, side: 1, count: -1 } }]);
+  for (const city of sqlite.prepare('SELECT DISTINCT city FROM legacy_counts').all().map((r) => r.city)) {
+    const docs = sqlite
+      .prepare('SELECT city, side, name, count, period_from, period_to FROM legacy_counts WHERE city = ?')
+      .all(city)
+      .map((r) => ({ ...r }));
+    await legacy.deleteMany({ city });
+    for (let i = 0; i < docs.length; i += 5000) await legacy.insertMany(docs.slice(i, i + 5000), { ordered: false });
+    console.log(`legacy  ${city.padEnd(8)} ${docs.length} names (${docs[0]?.period_from} → ${docs[0]?.period_to})`);
   }
 
   const stats = await db.command({ dbStats: 1 });

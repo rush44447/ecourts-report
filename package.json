@@ -6,7 +6,8 @@
     "scrape": "node scrape.js",
     "report": "node report.js",
     "parse": "node parse.js",
-    "sync-mongo": "node sync-mongo.js"
+    "sync-mongo": "node sync-mongo.js",
+    "import-legacy": "node import-legacy.js"
   },
   "keywords": [],
   "author": "",
