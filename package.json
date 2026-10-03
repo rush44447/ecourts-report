@@ -5,13 +5,16 @@
   "scripts": {
     "scrape": "node scrape.js",
     "report": "node report.js",
-    "parse": "node parse.js"
+    "parse": "node parse.js",
+    "sync-mongo": "node sync-mongo.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "Rajasthan High Court cause-list scraper: advocate appearance counts (petitioner / respondent side)",
   "dependencies": {
+    "dotenv": "^18.0.5",
+    "mongodb": "^7.7.0",
     "pdfjs-dist": "^6.3.289",
     "xlsx": "^0.18.5"
   },
