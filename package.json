@@ -1,17 +1,25 @@
 {
-  "name": "ecourts",
-  "version": "1.0.0",
-  "main": "index.js",
+  "name": "ecourts-report",
+  "version": "2.0.0",
+  "main": "scrape.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "scrape": "node scrape.js",
+    "report": "node report.js",
+    "parse": "node parse.js",
+    "sync-mongo": "node sync-mongo.js",
+    "import-legacy": "node import-legacy.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Rajasthan High Court cause-list scraper: advocate appearance counts (petitioner / respondent side)",
   "dependencies": {
-    "pdf-parse": "^1.1.1",
-    "puppeteer": "^24.40.0",
+    "dotenv": "^18.0.5",
+    "mongodb": "^7.7.0",
+    "pdfjs-dist": "^6.3.289",
     "xlsx": "^0.18.5"
+  },
+  "engines": {
+    "node": ">=22.13"
   }
 }
