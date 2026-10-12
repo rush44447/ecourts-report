@@ -48,6 +48,7 @@ async function scrapeDay(db, city, date) {
     : pdfs.filter((p) => args.force || !store.isPdfDone(db, city, p.file));
   let rows = 0;
   let cases = 0;
+  let missing = 0;
   const failed = [];
 
   const queue = [...todo];
@@ -57,6 +58,7 @@ async function scrapeDay(db, city, date) {
       await sleep(DELAY_MS);
       if (!buf && partiesOnly) continue;
       if (!buf) {
+        missing++;
         store.savePdf(db, city, date, p.file, [], 'missing');
         continue;
       }
@@ -80,10 +82,13 @@ async function scrapeDay(db, city, date) {
   };
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
-  if (!partiesOnly) store.markDay(db, city, date, pdfs.length);
+  // If the site lists PDFs but serves none of them, leave the day open for a retry.
+  const allMissing = pdfs.length > 0 && missing === todo.length && todo.length === pdfs.length;
+  if (!partiesOnly && !allMissing) store.markDay(db, city, date, pdfs.length);
   console.log(
     `${date} ${city.padEnd(8)} pdfs=${String(pdfs.length).padStart(3)} new=${String(todo.length).padStart(3)} ` +
-      `cases=${cases} appearances=${rows}${failed.length ? ` parse_errors=${failed.length}` : ''}`
+      `cases=${cases} appearances=${rows}${failed.length ? ` parse_errors=${failed.length}` : ''}` +
+      `${missing ? ` missing=${missing}` : ''}${allMissing ? ' (not served, will retry)' : ''}`
   );
 }
 

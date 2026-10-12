@@ -55,7 +55,7 @@ function normalizeParty(raw) {
   s = s.replace(/^(?:(?:MR|MRS|MS|MISS|SHRI|SMT|KU|KUMARI|SH)\s)+/, '');
   s = s.replace(/\bLIMITED\b/g, 'LTD').replace(/\bPRIVATE\b/g, 'PVT').replace(/\bCOMPANY\b/g, 'CO');
   s = s.replace(/\s+/g, ' ').replace(/^[\s-]+|[\s-]+$/g, '');
-  if (s === 'STATE' || s === 'STATE OF RAJ' || s === 'STATE OF RAJASTHAN RAJASTHAN') s = 'STATE OF RAJASTHAN';
+  if (s === 'STATE' || /^STATE OF RAJ[A-Z]*(?: RAJ[A-Z]*)?$/.test(s)) s = 'STATE OF RAJASTHAN'; // incl. RAJASRHAN, RAJASHTAN
   // "XXXXX" is how the list masks parties in confidential cases.
   return s.length >= 3 && /[A-Z]{2}/.test(s) && !/^X+$/.test(s) ? s : null;
 }

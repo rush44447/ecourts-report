@@ -15,6 +15,11 @@
 //   supplementary:  S.No x~22, case x~52, parties x~157, adv P x~332, R x~466
 // so column boundaries are derived from each page's own header row. All cell
 // text is left-aligned, so every line of a column starts at the same x.
+//
+// From 9 Oct 2026 the header reads "Petitioner Advocate | Respondent Advocate",
+// the parties are separated by a "VS" line, and each case ends with full-width
+// "[...]" notes (adjournments, category, offence) whose words spill into the
+// advocate columns, so everything from the first note on is skipped.
 
 const { normalizeName, isPerson, normalizeParty } = require('./names');
 
@@ -69,10 +74,16 @@ function boundaryScore(a, b, maxWidth) {
 
 // -> [petitioner, respondent?] as raw text
 function splitParties(lines, maxWidth) {
-  const runs = [[]]; // name lines, split wherever a "( ... )" note sits
+  const runs = [[]]; // name lines, split wherever a "( ... )" note or "VS" sits
   let depth = 0;
-  for (const l of lines) {
-    const s = l.str.trim();
+  for (let l of lines) {
+    let s = l.str.trim();
+    if (depth === 0 && /^VS\.?(?:\s|$)/i.test(s)) {
+      if (runs[runs.length - 1].length) runs.push([]);
+      s = s.replace(/^VS\.?\s*/i, '');
+      if (!s) continue;
+      l = { ...l, str: s };
+    }
     if (depth > 0 || s.startsWith('(')) {
       for (const ch of s) depth += ch === '(' ? 1 : ch === ')' ? -1 : 0;
       depth = Math.max(depth, 0);
@@ -95,20 +106,29 @@ function splitParties(lines, maxWidth) {
   return best ? [text(run.slice(0, best.k)), text(run.slice(best.k))] : [text(run)];
 }
 
+function modeX(items) {
+  const n = new Map();
+  for (const i of items) n.set(Math.round(i.x), (n.get(Math.round(i.x)) || 0) + 1);
+  return [...n].sort((a, b) => b[1] - a[1])[0]?.[0] ?? NaN;
+}
+
 // Column boundaries from the header row, or null if this page has no table.
 function pageColumns(items) {
   const find = (re) => items.find((i) => re.test(i.str.trim()));
   const sno = find(/^S\.?\s*No\.?$/i);
   const kase = find(/^Case Type/i);
   const title = find(/^Title of The Case/i);
-  const adv = find(/^Name of Advocate/i);
+  const adv = find(/^(?:Name of|Petitioner) Advocate/i);
+  const resAdv = find(/^Respondent Advocate/i);
   if (!sno || !kase || !title || !adv) return null;
   return {
     top: Math.max(sno.y, kase.y, title.y, adv.y) + 2,
     snoMaxX: sno.x + 18, //            S.No content sits a few pt right of its header
     caseMaxX: kase.x + 10, //          case-no content sits ~15pt left of its header
     advMinX: title.x + 60, //          parties start left of their header, advocates far right
-    splitX: adv.x, //                  P sub-column starts left of the header, R right of it
+    // P sub-column starts left of "Name of Advocate", R right of it; with two
+    // headers the split is halfway between them.
+    splitX: resAdv ? (adv.x + resAdv.x) / 2 : adv.x,
   };
 }
 
@@ -138,8 +158,9 @@ async function parsePdf(buffer) {
       const bottom = footer ? footer.y - 5 : height;
       const body = items.filter((i) => i.y > col.top && i.y < bottom);
       // Widest a parties line can be: from its left edge to the advocate column.
-      const titleX = Math.min(...body.filter((i) => i.x >= col.caseMaxX && i.x < col.advMinX).map((i) => i.x));
-      const advX = Math.min(...body.filter((i) => i.x >= col.advMinX).map((i) => i.x));
+      // Modes, since section headings and notes start at other x positions.
+      const titleX = modeX(body.filter((i) => i.x >= col.caseMaxX && i.x < col.advMinX));
+      const advX = modeX(body.filter((i) => i.x >= col.advMinX && i.x < col.splitX));
       const partyWidth = advX - titleX - 3;
 
       const starts = body
@@ -170,11 +191,16 @@ async function parsePdf(buffer) {
           };
           cases.push(current);
         }
-        if (!current) continue;
+        if (!current || current._inNotes) continue;
+        const noteY = Math.min(
+          ...row.filter((i) => Math.abs(i.x - titleX) < 3 && i.str.trim().startsWith('[')).map((i) => i.y)
+        );
         for (const i of row) {
+          if (i.y >= noteY - 1) continue;
           if (i.x >= col.advMinX) current._items[i.x < col.splitX ? 'P' : 'R'].push(i);
-          else if (i.x >= col.caseMaxX) current._items.T.push(i);
+          else if (i.x >= titleX - 3) current._items.T.push(i);
         }
+        if (noteY < Infinity) current._inNotes = true;
       }
     }
   } finally {
@@ -196,6 +222,7 @@ async function parsePdf(buffer) {
     }
     delete c._items;
     delete c._partyWidth;
+    delete c._inNotes;
   }
   return cases;
 }
