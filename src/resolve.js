@@ -5,7 +5,7 @@
 // "M SHAH/VIGYAN SHAH-R". When both halves are themselves established names,
 // the entry is split and each advocate gets the appearance.
 
-const { normalizeName, isPerson } = require('./names');
+const { normalizeName, isPerson, normalizeParty } = require('./names');
 
 const MIN_PART = 30; // each half must occur at least this often on its own
 
@@ -80,4 +80,26 @@ function renormalize(db, { from, to } = {}) {
   return { before: rows.length, after: written, dict };
 }
 
-module.exports = { resolveNames, renormalize };
+// Re-derive party names from their raw text (after normaliser changes).
+function renormalizeParties(db) {
+  const update = db.prepare('UPDATE parties SET name = ? WHERE raw = ?');
+  const drop = db.prepare('DELETE FROM parties WHERE raw = ?');
+  let changed = 0;
+  db.exec('BEGIN');
+  try {
+    for (const { raw, name } of db.prepare('SELECT DISTINCT raw, name FROM parties').all()) {
+      const next = normalizeParty(raw);
+      if (next === name) continue;
+      if (next) update.run(next, raw);
+      else drop.run(raw);
+      changed++;
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  return changed;
+}
+
+module.exports = { resolveNames, renormalize, renormalizeParties };

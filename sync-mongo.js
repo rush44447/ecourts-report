@@ -7,6 +7,10 @@
 // Collections (database "ecourts"):
 //   monthly_counts  { city, month: 'YYYY-MM', side: 'P'|'R', name, count }
 //   coverage        { city, month, days, court_days, pdfs, first, last, updated_at }
+//   party_daily_counts    { city, date: 'YYYY-MM-DD', month, side: 'P'|'R', name, count }
+//   party_monthly_counts  { city, month, side, name, count }
+//                   matters per party (first-named petitioner / respondent). Only
+//                   count >= 2, so one-off individual litigants don't bloat Atlas.
 //   legacy_counts   { city, side, name, count, period_from, period_to }
 //                   cleaned totals from the old undated JSON (import-legacy.js)
 //
@@ -17,6 +21,8 @@ require('dotenv').config({ path: require('path').join(__dirname, '.env'), quiet:
 const { parseArgs } = require('util');
 const { MongoClient } = require('mongodb');
 const store = require('./src/db');
+
+const MIN_PARTY_COUNT = 2;
 
 const { values: args } = parseArgs({
   options: { from: { type: 'string' }, to: { type: 'string' }, db: { type: 'string', default: 'ecourts' } },
@@ -43,10 +49,29 @@ async function main() {
     { key: { city: 1, side: 1, name: 1 } },
   ]);
   await coverage.createIndex({ city: 1, month: 1 }, { unique: true });
+  const partyDaily = db.collection('party_daily_counts');
+  const partyMonthly = db.collection('party_monthly_counts');
+  await partyDaily.createIndexes([
+    { key: { city: 1, date: 1, side: 1, name: 1 }, unique: true },
+    { key: { city: 1, month: 1 } },
+    { key: { city: 1, date: 1, count: -1 } },
+  ]);
+  await partyMonthly.createIndexes([
+    { key: { city: 1, month: 1, side: 1, name: 1 }, unique: true },
+    { key: { city: 1, side: 1, name: 1 } },
+  ]);
 
   const countStmt = sqlite.prepare(
     `SELECT side, name, COUNT(*) AS count FROM appearances
      WHERE city = ? AND substr(date, 1, 7) = ? GROUP BY side, name`
+  );
+  const partyDailyStmt = sqlite.prepare(
+    `SELECT date, side, name, COUNT(*) AS count FROM parties
+     WHERE city = ? AND substr(date, 1, 7) = ? GROUP BY date, side, name HAVING count >= ${MIN_PARTY_COUNT}`
+  );
+  const partyMonthlyStmt = sqlite.prepare(
+    `SELECT side, name, COUNT(*) AS count FROM parties
+     WHERE city = ? AND substr(date, 1, 7) = ? GROUP BY side, name HAVING count >= ${MIN_PARTY_COUNT}`
   );
   const covStmt = sqlite.prepare(
     `SELECT COUNT(*) AS days, SUM(n_pdfs > 0) AS court_days, SUM(n_pdfs) AS pdfs,
@@ -60,13 +85,22 @@ async function main() {
     for (let i = 0; i < docs.length; i += 5000) {
       await counts.insertMany(docs.slice(i, i + 5000), { ordered: false });
     }
+    const daily = partyDailyStmt.all(city, month).map((r) => ({ city, month, ...r }));
+    const monthly = partyMonthlyStmt.all(city, month).map((r) => ({ city, month, ...r }));
+    for (const [coll, rows] of [[partyDaily, daily], [partyMonthly, monthly]]) {
+      await coll.deleteMany({ city, month });
+      for (let i = 0; i < rows.length; i += 5000) await coll.insertMany(rows.slice(i, i + 5000), { ordered: false });
+    }
     const cov = covStmt.get(city, month);
     await coverage.replaceOne(
       { city, month },
       { city, month, ...cov, updated_at: new Date() },
       { upsert: true }
     );
-    console.log(`${month} ${city.padEnd(8)} ${docs.length} names, ${cov.court_days} court days`);
+    console.log(
+      `${month} ${city.padEnd(8)} ${docs.length} names, ${monthly.length} parties (${daily.length} daily), ` +
+        `${cov.court_days} court days`
+    );
   }
 
   // Legacy totals: small, so always replaced in full.

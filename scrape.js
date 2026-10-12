@@ -4,6 +4,7 @@
 //
 //   node scrape.js --from 2026-04-06 [--to 2026-10-03] [--city jodhpur jaipur]
 //                  [--concurrency 3] [--force] [--keep-pdfs]
+//   node scrape.js --from 2026-04-06 --parties-only   # backfill parties for scraped PDFs
 
 const fs = require('fs');
 const path = require('path');
@@ -11,7 +12,7 @@ const { parseArgs } = require('util');
 const { CITIES, listPdfs, downloadPdf, sleep } = require('./src/hcraj');
 const { parsePdf } = require('./src/parser');
 const store = require('./src/db');
-const { renormalize } = require('./src/resolve');
+const { renormalize, renormalizeParties } = require('./src/resolve');
 
 const { values: args, positionals } = parseArgs({
   allowPositionals: true,
@@ -22,6 +23,8 @@ const { values: args, positionals } = parseArgs({
     concurrency: { type: 'string', default: '3' },
     force: { type: 'boolean', default: false },
     'keep-pdfs': { type: 'boolean', default: false },
+    // re-download already scraped PDFs that have no parties yet; advocate rows are left alone
+    'parties-only': { type: 'boolean', default: false },
   },
 });
 
@@ -39,7 +42,10 @@ function* days(from, to) {
 
 async function scrapeDay(db, city, date) {
   const pdfs = await listPdfs(city, date);
-  const todo = pdfs.filter((p) => args.force || !store.isPdfDone(db, city, p.file));
+  const partiesOnly = args['parties-only'];
+  const todo = partiesOnly
+    ? pdfs.filter((p) => store.isPdfDone(db, city, p.file) && !store.hasParties(db, city, p.file))
+    : pdfs.filter((p) => args.force || !store.isPdfDone(db, city, p.file));
   let rows = 0;
   let cases = 0;
   const failed = [];
@@ -49,6 +55,7 @@ async function scrapeDay(db, city, date) {
     for (let p; (p = queue.shift()); ) {
       const buf = await downloadPdf(city, p.path);
       await sleep(DELAY_MS);
+      if (!buf && partiesOnly) continue;
       if (!buf) {
         store.savePdf(db, city, date, p.file, [], 'missing');
         continue;
@@ -61,9 +68,11 @@ async function scrapeDay(db, city, date) {
       try {
         const parsed = await parsePdf(buf);
         cases += parsed.length;
-        rows += store.savePdf(db, city, date, p.file, parsed, 'ok');
+        if (partiesOnly) store.saveParties(db, city, date, p.file, parsed);
+        else rows += store.savePdf(db, city, date, p.file, parsed, 'ok');
       } catch (err) {
         failed.push(p.file);
+        if (partiesOnly) continue;
         store.savePdf(db, city, date, p.file, [], 'parse_error');
         console.warn(`   parse error ${city} ${p.file}: ${err.message}`);
       }
@@ -71,7 +80,7 @@ async function scrapeDay(db, city, date) {
   };
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
-  store.markDay(db, city, date, pdfs.length);
+  if (!partiesOnly) store.markDay(db, city, date, pdfs.length);
   console.log(
     `${date} ${city.padEnd(8)} pdfs=${String(pdfs.length).padStart(3)} new=${String(todo.length).padStart(3)} ` +
       `cases=${cases} appearances=${rows}${failed.length ? ` parse_errors=${failed.length}` : ''}`
@@ -90,10 +99,13 @@ async function main() {
   for (const date of days(args.from, to)) {
     for (const city of CITY_LIST) {
       // Today's/future lists can still change, so only skip days safely in the past.
-      if (!args.force && date < today() && store.isDayDone(db, city, date)) continue;
+      if (args['parties-only'] && !store.isDayDone(db, city, date)) continue;
+      if (!args.force && !args['parties-only'] && date < today() && store.isDayDone(db, city, date)) continue;
       await scrapeDay(db, city, date);
     }
   }
+  console.log(`party names re-normalised: ${renormalizeParties(db)}`);
+  if (args['parties-only']) return db.close();
   // Split combined entries ("A SHAH B SHAH-R") using the whole db as dictionary.
   const r = renormalize(db, { from: args.from, to });
   console.log(`normalised ${r.before} -> ${r.after} appearances`);

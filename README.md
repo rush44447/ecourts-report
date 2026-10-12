@@ -23,7 +23,13 @@ counts how often each advocate appears, split into:
    such as `BY COURT ORDER` or a bare `AAG`, are dropped.
 4. **Counting:** one appearance is one case listing. If an advocate is printed
    twice on the same side of the same case, it counts once.
-5. **Storage:** `data/causelist.db` (SQLite via built-in `node:sqlite`). Every
+5. **Parties:** the "Title of The Case" column gives the first-named petitioner
+   and respondent of each case (`parties` table). The cell has no separator, so
+   `splitParties` uses the `(Department-State-R1)` notes, connector words (`S/O`,
+   `SON OF`, `PVT LTD`) and new-name starters (`THE`, `STATE OF`, `M/S`) to find
+   the boundary. Names lose relations and "through ..." tails (`SONU S/O RAMNIVAS`
+   → `SONU`), and masked parties (`XXXXX`) are dropped. One matter = one case listing.
+6. **Storage:** `data/causelist.db` (SQLite via built-in `node:sqlite`). Every
    appearance is stored with its date, PDF and case number, so counts can be
    rebuilt for any date range and coverage is always known.
 
@@ -58,6 +64,8 @@ node import-legacy.js --city jaipur  --file data/legacy/jaipur.json
 
 - `monthly_counts`: `{ city, month, side, name, count }`
 - `coverage`: which days/PDFs each month covers
+- `party_daily_counts` / `party_monthly_counts`: `{ city, date|month, side, name, count }`,
+  parties with 2+ matters only
 - `legacy_counts`: cleaned old totals with their period
 
 ## Usage
@@ -71,6 +79,7 @@ npm install
 node scrape.js --from 2026-04-06 --to 2026-10-03
 node scrape.js --from 2026-10-01 --city jodhpur      # one bench, up to today
 node scrape.js --from 2026-09-30 --to 2026-09-30 --force --keep-pdfs
+node scrape.js --from 2026-04-06 --parties-only      # add parties to already scraped PDFs
 
 # build reports -> reports/<city>.json, <city>.meta.json, <city>.xlsx
 node report.js                       # all time (legacy + scraped)
@@ -79,6 +88,9 @@ node report.js --from 2026-04-06 --to 2026-10-03
 # debug the parser on a local PDF
 node parse.js some_causelist.pdf
 ```
+
+`reports/<city>.parties.json` (`{ days, months, all }`, rows `[name, side, count]`)
+is what the website's `/api/parties` reads, as `ecourts/parties-<city>.json`.
 
 `reports/<city>.json` has the same shape the website API reads
 (`{ "Practitioner": { "NAME": count }, "Respondent": { ... } }`).

@@ -7,7 +7,9 @@
 //   <city>.json       { Practitioner: {NAME: count}, Respondent: {...} }
 //                     (same shape as the website's data1.json / data2.json)
 //   <city>.meta.json  date range + totals actually covered
-//   <city>.xlsx       Practitioner and Respondent sheets
+//   <city>.parties.json  { days, months, all }: matters per party, 2+ only
+//                     (rows are [name, 'P'|'R', count]; served by the website's /api/parties)
+//   <city>.xlsx       Practitioner, Respondent and Parties sheets
 // and prints coverage + top names.
 
 const fs = require('fs');
@@ -42,6 +44,7 @@ for (const city of Object.keys(CITIES)) {
   const legacyPeriod = withLegacy
     ? db.prepare('SELECT MIN(period_from) AS f, MAX(period_to) AS t FROM legacy_counts WHERE city = ?').get(city)
     : null;
+  const parties = store.partyCounts(db, city, args.from, args.to);
   const meta = {
     city,
     from: legacyPeriod?.f ?? cov.first,
@@ -56,6 +59,10 @@ for (const city of Object.keys(CITIES)) {
   };
 
   fs.writeFileSync(path.join(args.out, `${city}.json`), JSON.stringify(data, null, 2));
+  fs.writeFileSync(
+    path.join(args.out, `${city}.parties.json`),
+    JSON.stringify({ city, generated_at: meta.generated_at, ...parties })
+  );
   fs.writeFileSync(path.join(args.out, `${city}.meta.json`), JSON.stringify(meta, null, 2));
 
   const wb = XLSX.utils.book_new();
@@ -63,6 +70,12 @@ for (const city of Object.keys(CITIES)) {
     const rows = Object.entries(data[key]).map(([name, count]) => ({ Name: name, Count: count }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), key);
   }
+  const partyRows = parties.all.map(([name, side, count]) => ({
+    Party: name,
+    Side: side === 'P' ? 'Petitioner' : 'Respondent',
+    Matters: count,
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(partyRows), 'Parties');
   XLSX.writeFile(wb, path.join(args.out, `${city}.xlsx`));
 
   console.log(`\n${city.toUpperCase()}  ${meta.from} → ${meta.to}  (${meta.days_scraped} days, ${meta.pdfs} pdfs)`);

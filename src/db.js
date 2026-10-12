@@ -31,6 +31,12 @@ function open() {
     CREATE INDEX IF NOT EXISTS ix_app_city_date ON appearances(city, date);
     CREATE INDEX IF NOT EXISTS ix_app_file ON appearances(city, file);
     CREATE INDEX IF NOT EXISTS ix_app_name ON appearances(name);
+    -- First-named petitioner (P) and respondent (R) of each listed case.
+    CREATE TABLE IF NOT EXISTS parties (
+      city TEXT, date TEXT, file TEXT, sno TEXT, case_no TEXT,
+      side TEXT, name TEXT, raw TEXT);
+    CREATE INDEX IF NOT EXISTS ix_party_city_date ON parties(city, date);
+    CREATE INDEX IF NOT EXISTS ix_party_file ON parties(city, file);
     -- Cleaned totals from the old undated JSON (see src/legacy.js).
     CREATE TABLE IF NOT EXISTS legacy_counts (
       city TEXT, side TEXT, name TEXT, count INTEGER, period_from TEXT, period_to TEXT,
@@ -48,12 +54,37 @@ function isPdfDone(db, city, file) {
   return row?.status === 'ok';
 }
 
+function writeParties(db, city, date, file, cases) {
+  const ins = db.prepare('INSERT INTO parties VALUES (?,?,?,?,?,?,?,?)');
+  db.prepare('DELETE FROM parties WHERE city=? AND file=?').run(city, file);
+  for (const c of cases) {
+    for (const p of c.parties || []) ins.run(city, date, file, c.sno, c.caseNo, p.side, p.name, p.raw);
+  }
+}
+
+function hasParties(db, city, file) {
+  return !!db.prepare('SELECT 1 FROM parties WHERE city=? AND file=? LIMIT 1').get(city, file);
+}
+
+// Backfill parties for an already-scraped PDF without touching its appearances.
+function saveParties(db, city, date, file, cases) {
+  db.exec('BEGIN');
+  try {
+    writeParties(db, city, date, file, cases);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
 // Returns the number of appearance rows written.
 function savePdf(db, city, date, file, cases, status) {
   const ins = db.prepare('INSERT INTO appearances VALUES (?,?,?,?,?,?,?,?)');
   let n = 0;
   db.exec('BEGIN');
   try {
+    writeParties(db, city, date, file, cases);
     db.prepare('DELETE FROM appearances WHERE city=? AND file=?').run(city, file);
     for (const c of cases) {
       const seen = new Set(); // same advocate twice on one side of one case = 1 appearance
@@ -103,6 +134,31 @@ function counts(db, city, from, to, { withLegacy = false } = {}) {
   return out;
 }
 
+// Matters listed per party (first-named petitioner / respondent), for parties with
+// at least `min` matters in the bucket. Rows are [name, side, count], count desc.
+// -> { days: { 'YYYY-MM-DD': rows }, months: { 'YYYY-MM': rows }, all: rows }
+function partyCounts(db, city, from, to, { min = 2 } = {}) {
+  const range = [city, from ?? null, from ?? null, to ?? null, to ?? null];
+  const query = (bucket) =>
+    db
+      .prepare(
+        `SELECT ${bucket} AS bucket, name, side, COUNT(*) AS count FROM parties
+         WHERE city = ? AND (? IS NULL OR date >= ?) AND (? IS NULL OR date <= ?)
+         GROUP BY bucket, side, name HAVING count >= ? ORDER BY bucket, count DESC, name`
+      )
+      .all(...range, min);
+  const group = (rows) => {
+    const out = {};
+    for (const r of rows) (out[r.bucket] ??= []).push([r.name, r.side, r.count]);
+    return out;
+  };
+  return {
+    days: group(query('date')),
+    months: group(query('substr(date, 1, 7)')),
+    all: group(query("'all'")).all ?? [],
+  };
+}
+
 function coverage(db, city, from, to) {
   return db
     .prepare(
@@ -112,4 +168,6 @@ function coverage(db, city, from, to) {
     .get(city, from ?? null, from ?? null, to ?? null, to ?? null);
 }
 
-module.exports = { SIDE_KEY, DATA_DIR, open, isDayDone, isPdfDone, savePdf, markDay, counts, coverage };
+module.exports = {
+  SIDE_KEY, DATA_DIR, open, isDayDone, isPdfDone, hasParties, savePdf, saveParties, markDay, counts, partyCounts, coverage,
+};
