@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Company Lawsuit Search</title>
+
+<style>
+  body {
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    background: #f6f7fb;
+    color: #0f172a;
+    margin: 0;
+    padding: 20px;
+  }
+
+  a { color: #2563eb; }
+
+  .top-link {
+    font-size: 14px;
+  }
+
+  .hero {
+    max-width: 760px;
+    margin: 0 auto;
+    text-align: center;
+    padding: 12vh 0 20px;
+    transition: padding 0.2s;
+  }
+
+  body.has-results .hero {
+    padding-top: 10px;
+  }
+
+  .hero h1 {
+    margin: 0 0 6px;
+  }
+
+  .hero p {
+    margin: 0 0 18px;
+    color: #64748b;
+    font-size: 14px;
+  }
+
+  .search-box {
+    position: relative;
+    display: flex;
+    gap: 8px;
+  }
+
+  .search-box input {
+    flex: 1;
+    min-width: 0;
+    padding: 14px 18px;
+    font-size: 17px;
+    border-radius: 10px;
+    border: 1px solid #cbd5e1;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+  }
+
+  .search-box input:focus {
+    outline: 2px solid #2563eb;
+    border-color: transparent;
+  }
+
+  button {
+    padding: 8px 14px;
+    font-size: 14px;
+    border-radius: 6px;
+    border: none;
+    background: #2563eb;
+    color: white;
+    cursor: pointer;
+  }
+
+  .search-box button {
+    padding: 0 24px;
+    font-size: 16px;
+    border-radius: 10px;
+  }
+
+  button.secondary {
+    background: #64748b;
+  }
+
+  button:disabled {
+    background: #cbd5e1;
+    cursor: not-allowed;
+  }
+
+  .suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 4px;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    list-style: none;
+    padding: 6px 0;
+    text-align: left;
+    z-index: 10;
+    max-height: 360px;
+    overflow-y: auto;
+  }
+
+  .suggestions li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .suggestions li.active, .suggestions li:hover {
+    background: #e0e7ff;
+  }
+
+  .muted {
+    color: #64748b;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-left: 6px;
+    vertical-align: middle;
+    background: #e2e8f0;
+    color: #334155;
+  }
+
+  .badge.company {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+
+  .section {
+    max-width: 1200px;
+    margin: 24px auto 0;
+  }
+
+  .card {
+    background: #fff;
+    padding: 16px 18px;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    margin-bottom: 15px;
+  }
+
+  .card h2 {
+    margin: 0 0 4px;
+    font-size: 18px;
+  }
+
+  .summary {
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  .summary b {
+    font-size: 18px;
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  .chip {
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #0f172a;
+    border: 1px solid #e2e8f0;
+  }
+
+  .chip.selected {
+    background: #2563eb;
+    color: #fff;
+    border-color: #2563eb;
+  }
+
+  .controls {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: 12px;
+    font-size: 14px;
+  }
+
+  select {
+    padding: 6px 10px;
+    font-size: 14px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  }
+
+  thead {
+    background: #0f172a;
+    color: white;
+  }
+
+  th, td {
+    padding: 9px 12px;
+    text-align: left;
+    font-size: 13px;
+    vertical-align: top;
+  }
+
+  tbody tr:nth-child(even) {
+    background: #f1f5f9;
+  }
+
+  td .adv {
+    color: #64748b;
+    font-size: 12px;
+    margin-top: 2px;
+  }
+
+  td.side-hit {
+    font-weight: 600;
+  }
+
+  .pagination {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+    align-items: center;
+    font-size: 14px;
+  }
+
+  .note {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 6px;
+  }
+
+  .sources {
+    font-size: 12px;
+    margin: 10px 0 0;
+    padding-left: 20px;
+    word-break: break-all;
+  }
+
+  .hidden {
+    display: none;
+  }
+
+  @media (max-width: 600px) {
+    .search-box { flex-direction: column; }
+    .search-box button { padding: 12px; }
+  }
+</style>
+</head>
+
+<body>
+
+<a class="top-link" href="/">&larr; eCourts Data Viewer</a>
+
+<div class="hero">
+  <h1>Company Lawsuit Search</h1>
+  <p>Find every case a company is fighting in the Rajasthan High Court, plus other courts from the web.</p>
+  <form class="search-box" id="searchForm" autocomplete="off">
+    <input type="text" id="q" placeholder="e.g. State Bank of India" aria-label="Company name" />
+    <button type="submit">Search</button>
+    <ul class="suggestions hidden" id="suggestions"></ul>
+  </form>
+</div>
+
+<div class="section hidden" id="results">
+  <div class="card">
+    <h2>Rajasthan High Court</h2>
+    <div class="note" id="coverage"></div>
+    <div class="summary" id="summary"></div>
+    <div class="chips" id="names"></div>
+    <div class="controls">
+      <label>
+        Bench:
+        <select id="city" onchange="loadCases(1)">
+          <option value="">Both</option>
+          <option value="jaipur">Jaipur</option>
+          <option value="jodhpur">Jodhpur</option>
+        </select>
+      </label>
+      <label>
+        Company as:
+        <select id="side" onchange="loadCases(1)">
+          <option value="">Either side</option>
+          <option value="p">Petitioner</option>
+          <option value="r">Respondent</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 40px;">#</th>
+          <th>Case</th>
+          <th>Petitioner</th>
+          <th>Respondent</th>
+          <th style="width: 90px;">Bench</th>
+          <th style="width: 100px;">First listed</th>
+          <th style="width: 100px;">Last listed</th>
+          <th style="width: 70px;">Hearings</th>
+        </tr>
+      </thead>
+      <tbody id="cases"></tbody>
+    </table>
+  </div>
+
+  <div class="pagination">
+    <button class="secondary" id="prev" onclick="loadCases(page - 1)">Previous</button>
+    <button class="secondary" id="next" onclick="loadCases(page + 1)">Next</button>
+    <span class="muted" id="pageInfo"></span>
+  </div>
+
+  <div class="card" style="margin-top: 24px;">
+    <h2>Other courts (web search)</h2>
+    <div class="note">
+      Found by Perplexity on Indian legal sites (Supreme Court, LiveLaw, Indian Kanoon…). A sample of reported
+      cases, not a complete list or count: check the sources.
+    </div>
+    <div id="web" class="summary" style="margin-top: 10px;"></div>
+  </div>
+  <div class="table-wrap hidden" id="webTableWrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 40px;">#</th>
+          <th>Case</th>
+          <th style="width: 160px;">Court / forum</th>
+          <th style="width: 180px;">Case no.</th>
+          <th style="width: 60px;">Year</th>
+          <th>Subject</th>
+          <th style="width: 120px;">Status</th>
+          <th style="width: 60px;">Source</th>
+        </tr>
+      </thead>
+      <tbody id="webCases"></tbody>
+    </table>
+  </div>
+  <ol class="sources" id="webSources"></ol>
+</div>
+
+<script>
+  const LIMIT = 25;
+
+  let query = "";       // text searched
+  let exactName = null; // set when one party name is picked
+  let page = 1;
+  let totalPages = 1;
+  let suggestTimer = null;
+  let activeSuggestion = -1;
+
+  const $ = id => document.getElementById(id);
+
+  function el(tag, text, cls) {
+    const e = document.createElement(tag);
+    if (text != null) e.textContent = text;
+    if (cls) e.className = cls;
+    return e;
+  }
+
+  function badge(type) {
+    return el("span", type === "company" ? "Company" : "Individual", "badge " + type);
+  }
+
+  // ---- Suggestions ----
+  $("q").addEventListener("input", () => {
+    clearTimeout(suggestTimer);
+    suggestTimer = setTimeout(suggest, 200);
+  });
+
+  $("q").addEventListener("keydown", e => {
+    const items = [...$("suggestions").children];
+    if (!items.length || $("suggestions").classList.contains("hidden")) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      activeSuggestion = (activeSuggestion + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+      items.forEach((li, i) => li.classList.toggle("active", i === activeSuggestion));
+    } else if (e.key === "Enter" && activeSuggestion >= 0) {
+      e.preventDefault();
+      items[activeSuggestion].click();
+    } else if (e.key === "Escape") {
+      hideSuggestions();
+    }
+  });
+
+  document.addEventListener("click", e => {
+    if (!$("searchForm").contains(e.target)) hideSuggestions();
+  });
+
+  function hideSuggestions() {
+    $("suggestions").classList.add("hidden");
+    activeSuggestion = -1;
+  }
+
+  function suggest() {
+    const q = $("q").value.trim();
+    if (q.length < 2) return hideSuggestions();
+    fetch(`/api/lawsuits/suggest?${new URLSearchParams({ q })}`)
+      .then(res => res.json())
+      .then(data => {
+        const list = $("suggestions");
+        list.innerHTML = "";
+        activeSuggestion = -1;
+        (data.names || []).forEach(n => {
+          const li = el("li");
+          const name = el("span", n.name);
+          name.appendChild(badge(n.type));
+          li.appendChild(name);
+          li.appendChild(el("span", `${n.cases} case${n.cases === 1 ? "" : "s"}`, "muted"));
+          li.onclick = () => {
+            $("q").value = n.name;
+            hideSuggestions();
+            search(n.name, n.name);
+          };
+          list.appendChild(li);
+        });
+        list.classList.toggle("hidden", !list.children.length);
+      })
+      .catch(() => hideSuggestions());
+  }
+
+  // ---- Search ----
+  $("searchForm").addEventListener("submit", e => {
+    e.preventDefault();
+    hideSuggestions();
+    const q = $("q").value.trim();
+    if (q.length >= 2) search(q, null);
+  });
+
+  function search(q, name) {
+    query = q;
+    exactName = name;
+    document.body.classList.add("has-results");
+    $("results").classList.remove("hidden");
+    $("city").value = "";
+    $("side").value = "";
+    loadCases(1);
+    loadWeb(name || q);
+  }
+
+  function loadCases(p) {
+    if (p < 1 || (p > totalPages && p !== 1)) return;
+    const params = new URLSearchParams({ q: exactName || query, page: p, limit: LIMIT });
+    if (exactName) params.set("exact", "1");
+    if ($("city").value) params.set("city", $("city").value);
+    if ($("side").value) params.set("side", $("side").value);
+    $("summary").textContent = "Searching…";
+
+    fetch(`/api/lawsuits?${params}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) throw new Error(data.error);
+        page = data.page;
+        totalPages = Math.max(Math.ceil(data.total / data.limit), 1);
+        renderSummary(data);
+        renderCases(data);
+      })
+      .catch(err => {
+        $("summary").textContent = "Error: " + err.message;
+        $("cases").innerHTML = "";
+      });
+  }
+
+  function renderSummary(data) {
+    if (data.coverage) {
+      $("coverage").textContent =
+        `From the court's daily cause lists, ${data.coverage.from_date} to ${data.coverage.to_date}. ` +
+        "Cases are matched on the first petitioner / respondent named in the list.";
+    }
+    const s = $("summary");
+    s.innerHTML = "";
+    if (!data.total) {
+      s.textContent = `No cases found for "${data.q}".`;
+    } else {
+      const add = (text, bold) => s.appendChild(bold ? el("b", text) : document.createTextNode(text));
+      add(data.total.toLocaleString(), true);
+      add(` case${data.total === 1 ? "" : "s"} listed · `);
+      add(data.as_petitioner.toLocaleString(), true);
+      add(" as petitioner · ");
+      add(data.as_respondent.toLocaleString(), true);
+      add(" as respondent");
+      const cities = data.by_city.map(c => `${c.key[0].toUpperCase() + c.key.slice(1)} ${c.n}`).join(", ");
+      const types = data.by_type.slice(0, 5).map(t => `${t.key || "Other"} ${t.n}`).join(", ");
+      s.appendChild(el("div", `Bench: ${cities}`, "muted"));
+      s.appendChild(el("div", `Top case types: ${types}`, "muted"));
+    }
+
+    // Matched party names; click one to narrow to it, click again for all.
+    const chips = $("names");
+    chips.innerHTML = "";
+    if (data.name_count > 1 || exactName) {
+      if (exactName) {
+        const all = el("button", `← all names matching "${query}"`, "chip");
+        all.onclick = () => { exactName = null; loadCases(1); };
+        chips.appendChild(all);
+      }
+      data.names.forEach(n => {
+        const chip = el("button", `${n.name} (${n.cases})`, "chip" + (n.name === exactName ? " selected" : ""));
+        chip.title = n.type === "company" ? "Company" : "Individual";
+        chip.onclick = () => { exactName = n.name; loadCases(1); };
+        chips.appendChild(chip);
+      });
+      if (data.name_count > data.names.length) {
+        chips.appendChild(el("span", `+${data.name_count - data.names.length} more names`, "muted"));
+      }
+    }
+  }
+
+  function renderCases(data) {
+    const tbody = $("cases");
+    tbody.innerHTML = "";
+    data.records.forEach((r, i) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", (page - 1) * LIMIT + i + 1));
+      tr.appendChild(el("td", r.case_no));
+      for (const [side, parties, advocates] of [["P", r.petitioners, r.p_advocates], ["R", r.respondents, r.r_advocates]]) {
+        const td = el("td", parties.split(" | ").join(", "), r.sides.includes(side) ? "side-hit" : "");
+        if (advocates) td.appendChild(el("div", "Adv: " + advocates.split(" | ").join(", "), "adv"));
+        tr.appendChild(td);
+      }
+      tr.appendChild(el("td", r.city[0].toUpperCase() + r.city.slice(1)));
+      tr.appendChild(el("td", r.first_date));
+      tr.appendChild(el("td", r.last_date));
+      tr.appendChild(el("td", r.hearings));
+      tbody.appendChild(tr);
+    });
+    $("prev").disabled = page <= 1;
+    $("next").disabled = page >= totalPages;
+    $("pageInfo").textContent = data.total ? `Page ${page} of ${totalPages}` : "";
+  }
+
+  // ---- Other courts (Perplexity) ----
+  let webRequest = 0;
+
+  function loadWeb(name) {
+    const id = ++webRequest;
+    $("web").textContent = "Searching the web… (takes a few seconds)";
+    $("webCases").innerHTML = "";
+    $("webSources").innerHTML = "";
+    $("webTableWrap").classList.add("hidden");
+
+    fetch(`/api/lawsuits/web?${new URLSearchParams({ q: name })}`)
+      .then(res => res.json())
+      .then(data => {
+        if (id !== webRequest) return; // a newer search started
+        if (data.error) throw new Error(data.error);
+        const web = $("web");
+        web.innerHTML = "";
+        web.appendChild(el("div", data.summary));
+        if (data.reported_case_count) web.appendChild(el("div", "Reported count: " + data.reported_case_count, "muted"));
+
+        data.cases.forEach((c, i) => {
+          const tr = el("tr");
+          for (const v of [i + 1, c.title, c.forum, c.case_no, c.year, c.subject, c.status]) tr.appendChild(el("td", v || ""));
+          const src = el("td");
+          const url = data.sources[(c.source_index || 0) - 1];
+          if (/^https?:\/\//.test(url || "")) {
+            const a = el("a", `[${c.source_index}]`);
+            a.href = url;
+            a.target = "_blank";
+            a.rel = "noopener noreferrer";
+            src.appendChild(a);
+          }
+          tr.appendChild(src);
+          $("webCases").appendChild(tr);
+        });
+        $("webTableWrap").classList.toggle("hidden", !data.cases.length);
+
+        data.sources.filter(url => /^https?:\/\//.test(url)).forEach(url => {
+          const li = el("li");
+          const a = el("a", url);
+          a.href = url;
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          li.appendChild(a);
+          $("webSources").appendChild(li);
+        });
+      })
+      .catch(err => {
+        if (id === webRequest) $("web").textContent = "Web search unavailable: " + err.message;
+      });
+  }
+</script>
+
+</body>
+</html>

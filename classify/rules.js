@@ -92,7 +92,11 @@ async function apply() {
   await client.close();
 }
 
-if (process.argv[2] === 'apply') apply();
+module.exports = { classify };
+
+if (require.main !== module) {
+  // used as a library (build-lawsuits.js)
+} else if (process.argv[2] === 'apply') apply();
 else {
   const labels = loadLabels();
   let agree = 0;

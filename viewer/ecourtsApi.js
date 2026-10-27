@@ -3,6 +3,7 @@ const fsp = require('fs').promises;
 const path = require('path');
 
 const { log } = require('../utils/logger');
+const { registerLawsuitRoutes } = require('./lawsuitsApi');
 
 const PORT = 5051;
 const DATA_DIR = path.join(__dirname, '..', 'ecourts');
@@ -202,6 +203,8 @@ function startEcourtsApi() {
   app.get('/', (req, res) => {
     res.sendFile(path.join(DATA_DIR, 'index.html'));
   });
+
+  registerLawsuitRoutes(app);
 
   app.listen(PORT, '0.0.0.0', () => {
     log(`Ecourts API running on port ${PORT}`);
