@@ -21,3 +21,7 @@ Thumbs.db
 
 # Scraped data (SQLite db, optional PDFs)
 data/
+
+# Classifier output
+classify/results*.json
+classify/node_modules/

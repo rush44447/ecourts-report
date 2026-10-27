@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>eCourts Data Viewer</title>
+
+<style>
+  body {
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    background: #f6f7fb;
+    margin: 0;
+    padding: 20px;
+  }
+
+  h1 {
+    margin-bottom: 10px;
+  }
+
+  .controls {
+    background: #fff;
+    padding: 15px;
+    border-radius: 8px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 15px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  }
+
+  input[type="text"] {
+    padding: 8px 12px;
+    font-size: 14px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    min-width: 220px;
+  }
+
+  select, button {
+    padding: 8px 12px;
+    font-size: 14px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    cursor: pointer;
+  }
+
+  button {
+    background: #2563eb;
+    color: white;
+    border: none;
+  }
+
+  button.secondary {
+    background: #64748b;
+  }
+
+  button:disabled {
+    background: #cbd5e1;
+    cursor: not-allowed;
+  }
+
+  .info {
+    margin: 10px 0;
+    font-size: 14px;
+    color: #334155;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  }
+
+  thead {
+    background: #0f172a;
+    color: white;
+  }
+
+  th, td {
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 14px;
+  }
+
+  tbody tr:nth-child(even) {
+    background: #f1f5f9;
+  }
+
+  tbody tr:hover {
+    background: #e0e7ff;
+  }
+
+  .pagination {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+    align-items: center;
+  }
+
+  mark {
+    background: #fef08a;
+    border-radius: 2px;
+    padding: 0 2px;
+  }
+
+  .footer {
+    margin-top: 30px;
+    font-size: 12px;
+    color: #64748b;
+  }
+</style>
+</head>
+
+<body>
+
+<h1>eCourts Data Viewer</h1>
+
+<div class="controls">
+  <label>
+    City:
+    <select id="city">
+      <option value="jodhpur">Jodhpur</option>
+      <option value="jaipur">Jaipur</option>
+    </select>
+  </label>
+
+  <label>
+    Type:
+    <select id="type">
+      <option value="practitioner">Practitioner</option>
+      <option value="respondent">Respondent</option>
+    </select>
+  </label>
+
+  <button onclick="loadData(1)">Load</button>
+
+  <label>
+    Search:
+    <input type="text" id="search" placeholder="Search by name..." oninput="onSearch()" />
+  </label>
+  <button class="secondary" onclick="clearSearch()">Clear</button>
+</div>
+
+<div class="info" id="info"></div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 60px;">#</th>
+      <th>Name</th>
+      <th style="width: 120px;">Count</th>
+    </tr>
+  </thead>
+  <tbody id="tableBody">
+  </tbody>
+</table>
+
+<div class="pagination">
+  <button class="secondary" onclick="prevPage()">Previous</button>
+  <button class="secondary" onclick="nextPage()">Next</button>
+</div>
+
+<h2 style="margin-top: 36px;">Parties before the court</h2>
+
+<div class="controls">
+  <label>
+    City:
+    <select id="pCity" onchange="loadParties(1)">
+      <option value="jodhpur">Jodhpur</option>
+      <option value="jaipur">Jaipur</option>
+    </select>
+  </label>
+
+  <label>
+    Period:
+    <select id="pPeriod" onchange="onPeriodChange()">
+      <option value="day">Day</option>
+      <option value="month">Month</option>
+      <option value="all">All time</option>
+    </select>
+  </label>
+
+  <label id="pDayLabel">
+    Date:
+    <input type="date" id="pDay" onchange="loadParties(1)" />
+  </label>
+
+  <label id="pMonthLabel" style="display: none;">
+    Month:
+    <select id="pMonth" onchange="loadParties(1)"></select>
+  </label>
+
+  <label>
+    Side:
+    <select id="pSide" onchange="loadParties(1)">
+      <option value="">Both</option>
+      <option value="p">Petitioner</option>
+      <option value="r">Respondent</option>
+    </select>
+  </label>
+
+  <span>
+    <label><input type="radio" name="pKind" value="company" /> Corporate</label>
+    <label><input type="radio" name="pKind" value="individual" /> Individual</label>
+    <label><input type="radio" name="pKind" value="" checked /> All</label>
+  </span>
+
+  <button onclick="applyPartyKind()">Load</button>
+
+  <label>
+    Search:
+    <input type="text" id="pSearch" placeholder="e.g. Vidyut Nigam" oninput="onPartySearch()" />
+  </label>
+  <button class="secondary" onclick="clearPartySearch()">Clear</button>
+</div>
+
+<div class="info" id="pInfo"></div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 60px;">#</th>
+      <th>Party</th>
+      <th style="width: 120px;">Matters</th>
+      <th style="width: 120px;">As petitioner</th>
+      <th style="width: 120px;">As respondent</th>
+    </tr>
+  </thead>
+  <tbody id="pTableBody">
+  </tbody>
+</table>
+
+<div class="pagination">
+  <button class="secondary" id="pPrev" onclick="loadParties(pPage - 1)">Previous</button>
+  <button class="secondary" id="pNext" onclick="loadParties(pPage + 1)">Next</button>
+</div>
+
+<div class="footer">
+  Powered by Node.js API | Paginated server-side | Optimized for large datasets
+</div>
+
+<script>
+  const API_BASE = "http://167.235.252.184:5051";
+  const LIMIT = 50;
+
+  let currentPage = 1;
+  let totalPages = 1;
+  let searchTimer = null;
+
+  function getParams() {
+    return {
+      city: document.getElementById("city").value,
+      type: document.getElementById("type").value,
+      q: document.getElementById("search").value.trim()
+    };
+  }
+
+  function loadData(page) {
+    const { city, type, q } = getParams();
+    const endpoint = q ? `${API_BASE}/api/search` : `${API_BASE}/api/data`;
+    const url = `${endpoint}?city=${city}&type=${type}&page=${page}&limit=${LIMIT}${q ? `&q=${encodeURIComponent(q)}` : ''}`;
+
+    fetch(url)
+      .then(res => res.json())
+      .then(data => {
+        currentPage = data.page;
+        totalPages = Math.ceil(data.total / data.limit);
+
+        const searchLabel = q ? ` | Search: "${q}"` : '';
+        document.getElementById("info").textContent =
+          `City: ${city.toUpperCase()} | Type: ${type.toUpperCase()}${searchLabel} | Page ${currentPage} of ${totalPages} | Total Records: ${data.total}`;
+
+        renderTable(data.records, (currentPage - 1) * LIMIT);
+      })
+      .catch(err => {
+        document.getElementById("info").textContent = "Error loading data";
+        console.error(err);
+      });
+  }
+
+  function renderTable(records, offset) {
+    const tbody = document.getElementById("tableBody");
+    const q = document.getElementById("search").value.trim().toLowerCase();
+    tbody.innerHTML = "";
+
+    records.forEach((row, i) => {
+      const tr = document.createElement("tr");
+      const name = q ? row.name.replace(new RegExp(`(${q})`, 'gi'), '<mark>$1</mark>') : row.name;
+      tr.innerHTML = `<td>${offset + i + 1}</td><td>${name}</td><td>${row.count}</td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function onSearch() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => loadData(1), 300);
+  }
+
+  function clearSearch() {
+    document.getElementById("search").value = "";
+    loadData(1);
+  }
+
+  function nextPage() {
+    if (currentPage < totalPages) loadData(currentPage + 1);
+  }
+
+  function prevPage() {
+    if (currentPage > 1) loadData(currentPage - 1);
+  }
+
+  loadData(1);
+
+  // ---- Parties ----
+  const P_LIMIT = 10;
+  let pPage = 1;
+  let pTotalPages = 1;
+  let pSearchTimer = null;
+  // Corporate/Individual filter; only changes when Load is clicked.
+  let pKind = "";
+
+  function applyPartyKind() {
+    pKind = document.querySelector('input[name="pKind"]:checked').value;
+    loadParties(1);
+  }
+
+  function onPeriodChange() {
+    const period = document.getElementById("pPeriod").value;
+    document.getElementById("pDayLabel").style.display = period === "day" ? "" : "none";
+    document.getElementById("pMonthLabel").style.display = period === "month" ? "" : "none";
+    loadParties(1);
+  }
+
+  function loadParties(page) {
+    if (page < 1 || (page > pTotalPages && page !== 1)) return;
+    const city = document.getElementById("pCity").value;
+    const period = document.getElementById("pPeriod").value;
+    const side = document.getElementById("pSide").value;
+    const q = document.getElementById("pSearch").value.trim();
+    const key = period === "day" ? document.getElementById("pDay").value
+      : period === "month" ? document.getElementById("pMonth").value : "";
+    const params = new URLSearchParams({ city, period, page, limit: P_LIMIT });
+    if (key) params.set("key", key);
+    if (side) params.set("side", side);
+    if (pKind) params.set("kind", pKind);
+    if (q) params.set("q", q);
+
+    fetch(`${API_BASE}/api/parties?${params}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) throw new Error(data.error);
+        pPage = data.page;
+        pTotalPages = Math.max(Math.ceil(data.total / data.limit), 1);
+
+        const day = document.getElementById("pDay");
+        day.min = data.days[0] || "";
+        day.max = data.days.at(-1) || "";
+        if (data.period === "day") day.value = data.key || "";
+
+        const month = document.getElementById("pMonth");
+        if (month.options.length !== data.months.length) {
+          month.innerHTML = "";
+          [...data.months].reverse().forEach(m => month.add(new Option(m, m)));
+        }
+        if (data.period === "month") month.value = data.key || "";
+
+        const label = data.period === "all" ? "All time" : data.key || "no data";
+        const empty = data.period === "day" && !data.days.includes(data.key) ? " (no cause list for this date)" : "";
+        document.getElementById("pInfo").textContent =
+          `City: ${city.toUpperCase()} | ${label}${empty} | Page ${pPage} of ${pTotalPages} | ${{ company: "Corporate parties", individual: "Individual parties" }[data.kind] || "Parties"} with 2+ matters: ${data.total}`;
+        document.getElementById("pPrev").disabled = pPage <= 1;
+        document.getElementById("pNext").disabled = pPage >= pTotalPages;
+
+        const tbody = document.getElementById("pTableBody");
+        tbody.innerHTML = "";
+        data.records.forEach((row, i) => {
+          const tr = document.createElement("tr");
+          for (const v of [(pPage - 1) * P_LIMIT + i + 1, row.name, row.count, row.petitioner || "", row.respondent || ""]) {
+            const td = document.createElement("td");
+            td.textContent = v;
+            tr.appendChild(td);
+          }
+          tbody.appendChild(tr);
+        });
+      })
+      .catch(err => {
+        document.getElementById("pInfo").textContent = "Error loading parties";
+        console.error(err);
+      });
+  }
+
+  function onPartySearch() {
+    clearTimeout(pSearchTimer);
+    pSearchTimer = setTimeout(() => loadParties(1), 300);
+  }
+
+  function clearPartySearch() {
+    document.getElementById("pSearch").value = "";
+    loadParties(1);
+  }
+
+  loadParties(1);
+</script>
+
+</body>
+</html>
