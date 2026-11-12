@@ -1,0 +1,17 @@
+{
+  "name": "ecourts-viewer",
+  "version": "1.1.0",
+  "private": true,
+  "main": "app.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^5.2.1"
+  }
+}

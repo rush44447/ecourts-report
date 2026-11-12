@@ -8,123 +8,96 @@ const { registerLawsuitRoutes } = require('./lawsuitsApi');
 const PORT = 5051;
 const DATA_DIR = path.join(__dirname, '..', 'ecourts');
 
-// Traffic is very low, so instead of holding every dataset in memory for the
-// process lifetime we load only the dataset a request needs, then release it as
-// soon as the response finishes (see withDataset below). Each city maps to its
-// own (large) JSON file.
+// Each city maps to its own (large) JSON file.
 const CITY_FILES = {
   jodhpur: 'data1.json',
   jaipur: 'data2.json',
 };
 
-// Load + transform + sort a single dataset file. Async so the ~10-16MB read +
-// parse never blocks the event loop (the mail scheduler shares this process).
-async function loadAndPrepare(file) {
-  const raw = await fsp.readFile(path.join(DATA_DIR, file), 'utf-8');
-  const json = JSON.parse(raw);
+// Parsed data files are kept for a while after their last use, so repeat
+// searches skip the 10-16 MB read + parse + sort, and are dropped when the site
+// is idle. A file replaced on disk (new mtime) is reloaded on the next request.
+const CACHE_IDLE_MS = 10 * 60 * 1000;
+const cache = new Map(); // file -> { mtime, promise, timer }
 
+async function loadCached(file, prepare) {
+  const full = path.join(DATA_DIR, file);
+  const { mtimeMs } = await fsp.stat(full);
+  let hit = cache.get(file);
+  if (!hit || hit.mtime !== mtimeMs) {
+    if (hit) clearTimeout(hit.timer);
+    const promise = fsp.readFile(full, 'utf-8').then(raw => prepare(JSON.parse(raw)));
+    hit = { mtime: mtimeMs, promise, timer: null };
+    cache.set(file, hit);
+    promise.catch(() => cache.get(file) === hit && cache.delete(file));
+  }
+  clearTimeout(hit.timer);
+  hit.timer = setTimeout(() => cache.get(file) === hit && cache.delete(file), CACHE_IDLE_MS).unref();
+  return hit.promise;
+}
+
+// { type: { name: count } } -> { type: [{ name, count }] } sorted by count.
+function prepareCounts(json) {
   const result = {};
-
   for (const key in json) {
     result[key.toLowerCase()] = Object.entries(json[key])
       .sort((a, b) => b[1] - a[1])
       .map(([name, count]) => ({ name, count }));
   }
-
   return result;
 }
 
-// Interceptor: lazily load ONLY the requested city's dataset, attach it to the
-// request, and register a destroyer that frees it once the response is done.
+const prepareParties = data => ({
+  ...data,
+  dayKeys: Object.keys(data.days).sort(),
+  monthKeys: Object.keys(data.months).sort(),
+});
+
+// Attach the requested city's dataset to the request.
 async function withDataset(req, res, next) {
   const city = req.query.city?.toLowerCase();
   const file = CITY_FILES[city];
   if (!file) return res.status(400).json({ error: 'Invalid city or type' });
 
   try {
-    req.citySource = await loadAndPrepare(file);
+    req.citySource = await loadCached(file, prepareCounts);
   } catch (err) {
     log(`Failed to load dataset "${file}" for city "${city}": ${err.message}`);
     return res.status(500).json({ error: 'Failed to load dataset' });
   }
-
-  // Destroyer: drop the reference to the big object the moment the response is
-  // sent so it can be garbage-collected between (infrequent) requests instead of
-  // lingering in memory. `finish` = response sent, `close` = client aborted.
-  let released = false;
-  const release = () => {
-    if (released) return;
-    released = true;
-    req.citySource = null;
-    // Best-effort immediate reclaim. Only available when node is started with
-    // --expose-gc; otherwise V8 collects on its own schedule (still freed).
-    if (typeof global.gc === 'function') {
-      try { global.gc(); } catch (_) { /* ignore */ }
-    }
-  };
-  res.once('finish', release);
-  res.once('close', release);
-
   next();
 }
+
+// /api/search filters by name; /api/data is the same without a query.
+const countsHandler = withQuery => (req, res) => {
+  const type = req.query.type?.toLowerCase();
+  const q = withQuery ? (req.query.q || '').toLowerCase().trim() : '';
+  const page = Math.max(Number(req.query.page) || 1, 1);
+  const limit = Math.min(Number(req.query.limit) || 50, 100);
+
+  const dataset = req.citySource?.[type];
+  if (!dataset) return res.status(400).json({ error: 'Invalid city or type' });
+
+  const filtered = q ? dataset.filter(r => r.name.toLowerCase().includes(q)) : dataset;
+  const start = (page - 1) * limit;
+
+  res.json({
+    total: filtered.length,
+    page,
+    limit,
+    records: filtered.slice(start, start + limit),
+  });
+};
 
 function startEcourtsApi() {
   const app = express();
 
-  app.get('/api/search', withDataset, (req, res) => {
-    const type = req.query.type?.toLowerCase();
-    const q = (req.query.q || '').toLowerCase().trim();
-    const page = Math.max(Number(req.query.page) || 1, 1);
-    const limit = Math.min(Number(req.query.limit) || 50, 100);
-
-    const dataset = req.citySource?.[type];
-    if (!dataset) return res.status(400).json({ error: 'Invalid city or type' });
-
-    const filtered = q ? dataset.filter(r => r.name.toLowerCase().includes(q)) : dataset;
-    const start = (page - 1) * limit;
-
-    res.json({
-      total: filtered.length,
-      page,
-      limit,
-      records: filtered.slice(start, start + limit)
-    });
-  });
-
-  app.get('/api/data', withDataset, (req, res) => {
-    const type = req.query.type?.toLowerCase();
-    const page = Math.max(Number(req.query.page) || 1, 1);
-    const limit = Math.min(Number(req.query.limit) || 50, 100);
-
-    const dataset = req.citySource?.[type];
-
-    if (!dataset) {
-      return res.status(400).json({ error: 'Invalid city or type' });
-    }
-
-    const start = (page - 1) * limit;
-
-    res.json({
-      total: dataset.length,
-      page,
-      limit,
-      records: dataset.slice(start, start + limit)
-    });
-  });
+  app.get('/api/search', withDataset, countsHandler(true));
+  app.get('/api/data', withDataset, countsHandler(false));
 
   // Company/individual label per party name, written by ecourts-report
   // (classify scripts) into party-types.json as { name: 'c' | 'i' }.
-  let partyTypes = null;
-  let partyTypesMtime = 0;
-  async function loadPartyTypes() {
-    const file = path.join(DATA_DIR, 'party-types.json');
-    const { mtimeMs } = await fsp.stat(file);
-    if (!partyTypes || mtimeMs !== partyTypesMtime) {
-      partyTypes = JSON.parse(await fsp.readFile(file, 'utf-8'));
-      partyTypesMtime = mtimeMs;
-    }
-    return partyTypes;
-  }
+  const loadPartyTypes = () => loadCached('party-types.json', x => x);
 
   // Parties that are regularly before the court: matters listed per party on a
   // day, in a month, or overall. Built by ecourts-report (report.js) into
@@ -152,14 +125,14 @@ function startEcourtsApi() {
 
     let data;
     try {
-      data = JSON.parse(await fsp.readFile(path.join(DATA_DIR, `parties-${city}.json`), 'utf-8'));
+      data = await loadCached(`parties-${city}.json`, prepareParties);
     } catch (err) {
       log(`Failed to load parties for "${city}": ${err.message}`);
       return res.status(500).json({ error: 'Failed to load parties' });
     }
 
-    const days = Object.keys(data.days).sort();
-    const months = Object.keys(data.months).sort();
+    const days = data.dayKeys;
+    const months = data.monthKeys;
     let key = req.query.key || null;
     let rows;
     if (period === 'all') {
